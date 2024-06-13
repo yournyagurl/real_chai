@@ -89,4 +89,4 @@ async def slots_error(ctx, error):
         embed.set_author(name=ctx.author.display_name, icon_url=ctx.author.avatar.url)
         await ctx.send(embed=embed)
 
-bot.run('MTI0MTc0NTU5ODg2NDk1MzM0NA.GLA-hF.GmiGVIDzpkicuSuCaY0XCaH8yNhosaVz4LoedA')
+bot.run('TOKEN')

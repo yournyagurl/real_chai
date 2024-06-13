@@ -1,0 +1,45 @@
+import discord
+from discord.ext import commands
+from PIL import Image, ImageDraw, ImageFont
+import random
+import io
+
+intents = discord.Intents.default()
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+@bot.event
+async def on_ready():
+    print(f'Logged in as {bot.user}')
+
+@bot.command(name='spin')
+async def spin(ctx):
+    options = ['Option 1', 'Option 2', 'Option 3', 'Option 4']
+    result = random.choice(options)
+    
+    # Create the wheel image
+    size = 500
+    wheel = Image.new('RGB', (size, size), (255, 255, 255))
+    draw = ImageDraw.Draw(wheel)
+    font = ImageFont.truetype("arial.ttf", 20)
+    
+    num_segments = len(options)
+    segment_angle = 360 / num_segments
+    for i, option in enumerate(options):
+        start_angle = i * segment_angle
+        end_angle = start_angle + segment_angle
+        draw.pieslice([0, 0, size, size], start_angle, end_angle, fill=(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)))
+        text_angle = start_angle + (segment_angle / 2)
+        x = size / 2 + (size / 3) * math.cos(math.radians(text_angle))
+        y = size / 2 + (size / 3) * math.sin(math.radians(text_angle))
+        draw.text((x, y), option, font=font, fill=(0, 0, 0))
+    
+    # Save the image to a BytesIO object
+    buffer = io.BytesIO()
+    wheel.save(buffer, format='PNG')
+    buffer.seek(0)
+
+    # Send the image to Discord
+    await ctx.send(f'The wheel landed on: {result}')
+    await ctx.send(file=discord.File(fp=buffer, filename='wheel.png'))
+
+bot.run('YOUR_BOT_TOKEN')
