@@ -466,3 +466,4 @@ def update_last_claim_times(member_id, claim_type, time):
     connection.commit()
     cursor.close()
     connection.close()
+

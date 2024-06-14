@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from dateutil import parser as date_parser
 import discord
 from discord.ext import commands, tasks
-from eliDb import initialize_database, add_member, add_cash, get_cash, add_xp, get_xp, reset_xp, remove_cash, remove_xp, get_xp_leaderboard, get_cash_leaderboard, deposit, withdraw, get_bank_balance, update_last_claim_times, get_last_claim_times, get_inventory, get_shop_items, add_shop_item, edit_shop_item, delete_shop_item, add_inventory_item
+from eliDb import initialize_database, add_member, add_cash, get_cash, add_xp, get_xp, reset_xp, remove_cash, remove_xp, get_xp_leaderboard, add_shop_item, get_cash_leaderboard, deposit, withdraw, get_bank_balance, update_last_claim_times, get_last_claim_times, get_inventory, get_shop_items, add_shop_item, edit_shop_item, delete_shop_item, add_inventory_item, use_inventory_item
 
 # Load environment variables from .env file
 load_dotenv()
@@ -420,8 +420,8 @@ last_weekly_payout_date = {}
 user_balances = {}
 
 weekly_role_income = {
-    "Shamrock": 2500,  # Replace with your role names and income amounts
-    "₊˚໒ Staff ୭₊˚": 5000,
+    "Shamrock": 5000,  # Replace with your role names and income amounts
+    "₊˚໒ Staff ୭₊˚": 2500,
     "Vanity Link" : 2000,
 }
 # Run the bot
@@ -574,6 +574,20 @@ async def buy_item(ctx, item_name):
     add_inventory_item(member_id, item_name)
 
     await ctx.send(f"Congratulations! You have bought {item_name} for {item_price} cash.")
+
+
+@bot.command(name='use')
+async def use_item(ctx, *, item_name: str):
+    member_id = ctx.author.id  # Get the ID of the command invoker
+
+    # Call the function to use the inventory item
+    success = use_inventory_item(member_id, item_name)
+
+    if success:
+        await ctx.send(f"{ctx.author.mention}, you have successfully used {item_name}.")
+    else:
+        await ctx.send(f"{ctx.author.mention}, an error occurred while using {item_name}. Please try again later.")
+
 
 #
 #
