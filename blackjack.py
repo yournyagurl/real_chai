@@ -94,4 +94,4 @@ async def pet_status(ctx):
     else:
         await ctx.send("You don't have a pet yet. Use `;adopt` to adopt a pet!")
 
-bot.run('MTI0MTc0NTU5ODg2NDk1MzM0NA.GLA-hF.GmiGVIDzpkicuSuCaY0XCaH8yNhosaVz4LoedA')
+bot.run('TOKEN')
