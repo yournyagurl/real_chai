@@ -1114,7 +1114,8 @@ async def feed_pet_command(ctx, pet_name: str):
             return
 
         level = update_pet_feedings(member_id, pet_name)
-        await ctx.send(f"You have fed {pet_name}.")
+        embed = discord.Embed(title="Feeding Time!", description=f'Thanks for feeding {pet_name}', color=custom_color)
+        await ctx.send(embed = embed)
 
     except Exception as e:
         print("Error feeding pet:", e)
