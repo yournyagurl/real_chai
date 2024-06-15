@@ -1,7 +1,9 @@
 import sqlite3
-import datetime
+import datetime as dt
 import pytz
 import logging
+from datetime import timedelta, datetime
+
 
 def initialize_database():
     connection = sqlite3.connect("eli.db")
@@ -572,3 +574,36 @@ def get_pet_details(member_id):
         print("Error fetching pet details:", error)
         return None
 
+def update_pet_feedings(member_id, pet_name):
+    connection = sqlite3.connect("eli.db")
+    cursor = connection.cursor()
+    cursor.execute("UPDATE Pets SET Feedings = Feedings + 1, LastFedDate = ? WHERE MemberId = ? AND PetName = ?",
+                   (datetime.now().strftime("%Y-%m-%d"), member_id, pet_name))
+    cursor.execute("SELECT Feedings FROM Pets WHERE MemberId = ? AND PetName = ?", (member_id, pet_name))
+    feedings = cursor.fetchone()[0]
+
+    # Determine the new level
+    if feedings >= 90:
+        level = "Adult"
+    elif feedings >= 40:
+        level = "Teen"
+    elif feedings >= 10:
+        level = "Young"
+    else:
+        level = "Newborn"
+
+    cursor.execute("UPDATE Pets SET Level = ? WHERE MemberId = ? AND PetName = ?", (level, member_id, pet_name))
+    connection.commit()
+    cursor.close()
+    connection.close()
+
+    return level
+
+def check_pet_health():
+    connection = sqlite3.connect("eli.db")
+    cursor = connection.cursor()
+    one_week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    cursor.execute("DELETE FROM Pets WHERE LastFedDate < ?", (one_week_ago,))
+    connection.commit()
+    cursor.close()
+    connection.close()

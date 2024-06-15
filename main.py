@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from dateutil import parser as date_parser
 import discord
 from discord.ext import commands, tasks
-from eliDb import initialize_database, add_member, add_cash, get_cash, add_xp, get_xp, reset_xp, remove_cash, remove_xp, get_xp_leaderboard, get_pet_details, adopt_pet, rename_pet, fetch_random_pet_from_store, add_shop_item, get_cash_leaderboard, deposit, withdraw, get_bank_balance, update_last_claim_times, get_last_claim_times, get_inventory, get_shop_items, add_shop_item, edit_shop_item, delete_shop_item, add_inventory_item, use_inventory_item
+from eliDb import initialize_database, add_member, add_cash, get_cash, add_xp, get_xp, reset_xp, remove_cash, remove_xp, get_xp_leaderboard, get_pet_details, update_pet_feedings, check_pet_health, adopt_pet, rename_pet, fetch_random_pet_from_store, add_shop_item, get_cash_leaderboard, deposit, withdraw, get_bank_balance, update_last_claim_times, get_last_claim_times, get_inventory, get_shop_items, add_shop_item, edit_shop_item, delete_shop_item, add_inventory_item, use_inventory_item
 import traceback
 import sqlite3
 
@@ -1097,6 +1097,36 @@ async def pet_status(ctx):
     else:
         await ctx.send("You don't have a pet yet. Use `;adopt` to adopt a pet!")
 
+@bot.command(name='feed')
+async def feed_pet_command(ctx, pet_name: str):
+    try:
+        member_id = ctx.author.id
+
+        connection = sqlite3.connect("eli.db")
+        cursor = connection.cursor()
+        cursor.execute("SELECT * FROM Pets WHERE MemberId = ? AND PetName = ?", (member_id, pet_name))
+        pet = cursor.fetchone()
+        cursor.close()
+        connection.close()
+
+        if not pet:
+            await ctx.send(f"You don't have a pet named {pet_name}.")
+            return
+
+        level = update_pet_feedings(member_id, pet_name)
+        await ctx.send(f"You have fed {pet_name}.")
+
+    except Exception as e:
+        print("Error feeding pet:", e)
+        await ctx.send("An error occurred while feeding your pet. Please try again later.")
+
+@tasks.loop(hours=24)
+async def daily_pet_check():
+    check_pet_health()
+
+@daily_pet_check.before_loop
+async def before_daily_pet_check():
+    await bot.wait_until_ready()
 
 
 #
