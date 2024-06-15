@@ -1,6 +1,7 @@
 import sqlite3
 import datetime
 import pytz
+import logging
 
 def initialize_database():
     connection = sqlite3.connect("eli.db")
@@ -386,48 +387,60 @@ def add_inventory_item(member_id, item_name):
     connection.close()
 
 def use_inventory_item(member_id, item_name):
-    connection = sqlite3.connect("eli.db")
-    cursor = connection.cursor()
+    try:
+        connection = sqlite3.connect("eli.db")
+        cursor = connection.cursor()
 
-    # Get the item ID and effects from the Shop table
-    cursor.execute('''
-    SELECT ItemId, ItemConsumable, RoleAssigned
-    FROM Shop
-    WHERE ItemName = ?''', (item_name,))
-    result = cursor.fetchone()
-    if not result:
-        raise ValueError("Item not found in shop.")
-    
-    item_id, consumable, role_assigned = result
+        # Get the item ID and effects from the Shop table
+        cursor.execute('''
+        SELECT ItemId, ItemConsumable, RoleAssigned
+        FROM Shop
+        WHERE ItemName = ?''', (item_name,))
+        result = cursor.fetchone()
+        if not result:
+            raise ValueError("Item not found in shop.")
 
-    # Check if the user has the item in their inventory
-    cursor.execute('''
-    SELECT Quantity
-    FROM Inventory
-    WHERE MemberId = ? AND ItemId = ?''', (member_id, item_id))
-    result = cursor.fetchone()
-    if not result or result[0] <= 0:
-        raise ValueError("Item not found in inventory or quantity is zero.")
-    
-    quantity = result[0]
+        item_id, consumable, role_assigned = result
 
-    # If the item is consumable, decrease its quantity
-    if consumable:
-        new_quantity = quantity - 1
-        if new_quantity <= 0:
-            cursor.execute('''
-            DELETE FROM Inventory
-            WHERE MemberId = ? AND ItemId = ?''', (member_id, item_id))
-        else:
-            cursor.execute('''
-            UPDATE Inventory
-            SET Quantity = ?
-            WHERE MemberId = ? AND ItemId = ?''', (new_quantity, member_id, item_id))
+        # Check if the user has the item in their inventory
+        cursor.execute('''
+        SELECT Quantity
+        FROM Inventory
+        WHERE MemberId = ? AND ItemId = ?''', (member_id, item_id))
+        result = cursor.fetchone()
+        if not result or result[0] <= 0:
+            raise ValueError("Item not found in inventory or quantity is zero.")
 
-    connection.commit()
-    cursor.close()
-    connection.close()
-    return True
+        quantity = result[0]
+
+        # If the item is consumable, decrease its quantity
+        if consumable:
+            new_quantity = quantity - 1
+            if new_quantity <= 0:
+                cursor.execute('''
+                DELETE FROM Inventory
+                WHERE MemberId = ? AND ItemId = ?''', (member_id, item_id))
+            else:
+                cursor.execute('''
+                UPDATE Inventory
+                SET Quantity = ?
+                WHERE MemberId = ? AND ItemId = ?''', (new_quantity, member_id, item_id))
+
+        connection.commit()
+
+        return role_assigned  # Return the role name or ID associated with the item
+
+    except sqlite3.Error as e:
+        logging.error(f"SQLite error in use_inventory_item: {e}")
+        raise  # Re-raise the exception to be handled in the command function
+    except ValueError as ve:
+        logging.error(f"ValueError in use_inventory_item: {ve}")
+        raise  # Raise ValueError to indicate item not found or quantity issue
+    finally:
+        cursor.close()
+        connection.close()
+
+    return None
 
 def get_last_claim_times(member_id, claim_type):
     connection = sqlite3.connect("eli.db")
@@ -466,4 +479,98 @@ def update_last_claim_times(member_id, claim_type, time):
     connection.commit()
     cursor.close()
     connection.close()
+
+def add_pet_to_store(pet_name, image_url):
+    try:
+        connection = sqlite3.connect("eli.db")
+        cursor = connection.cursor()
+
+        cursor.execute("INSERT INTO PetStore (PetName, image_url) VALUES (?, ?)", (pet_name, image_url))
+        connection.commit()
+
+        cursor.close()
+        connection.close()
+        print(f"Successfully added {pet_name} to the PetStore!")
+        return True  # Return True if successfully added
+    except sqlite3.Error as error:
+        print("Error adding pet to PetStore:", error)
+        return False  # Return False on error
+    
+def fetch_random_pet_from_store():
+    try:
+        connection = sqlite3.connect("eli.db")
+        cursor = connection.cursor()
+
+        cursor.execute("SELECT * FROM PetStore ORDER BY RANDOM() LIMIT 1")
+        pet = cursor.fetchone()
+
+        cursor.close()
+        connection.close()
+
+        return pet  # Returns None if no pet is found
+    except sqlite3.Error as error:
+        print("Error fetching random pet from PetStore:", error)
+        return None
+
+# Function to add a pet to user's Pets table
+def adopt_pet(member_id, pet_name, image_url, adoption_date, level):
+    try:
+        connection = sqlite3.connect("eli.db")
+        cursor = connection.cursor()
+
+        cursor.execute("INSERT INTO Pets (MemberId, PetName, image_url, AdoptionDate, Level) VALUES (?, ?, ?, ?, ?)",
+                       (member_id, pet_name, image_url, adoption_date, level))
+        connection.commit()
+
+        cursor.close()
+        connection.close()
+
+        return True  # Return True if successfully added
+    except sqlite3.Error as error:
+        print("Error adding pet to user's Pets table:", error)
+        return False
+
+def rename_pet(member_id, current_pet_name, new_pet_name):
+    try:
+        connection = sqlite3.connect("eli.db")
+        cursor = connection.cursor()
+
+        cursor.execute("UPDATE Pets SET PetName = ? WHERE MemberId = ? AND PetName = ?",
+                       (new_pet_name, member_id, current_pet_name))
+        connection.commit()
+
+        cursor.close()
+        connection.close()
+
+        return True  # Return True if successfully renamed
+    except sqlite3.Error as error:
+        print("Error renaming pet:", error)
+        return False
+    
+def get_pet_details(member_id):
+    try:
+        # Connect to SQLite database
+        connection = sqlite3.connect("eli.db")
+        cursor = connection.cursor()
+
+        # Query to fetch pet details based on MemberId
+        cursor.execute('''
+            SELECT * FROM Pets
+            WHERE MemberId = ?
+        ''', (member_id,))
+
+        pet_details = cursor.fetchone()  # Fetch the first row (should be only one pet per member)
+
+        # Close cursor and connection
+        cursor.close()
+        connection.close()
+
+        return pet_details  # Return the fetched pet details (or None if not found)
+
+    except sqlite3.Error as error:
+        print("Error fetching pet details:", error)
+        return None
+
+add_shop_item("Clown", 100, True, 1158546208676130867)
+add_shop_item("FuckBoy", 100, True, 1105428709382574080)
 

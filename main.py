@@ -11,7 +11,9 @@ from dotenv import load_dotenv
 from dateutil import parser as date_parser
 import discord
 from discord.ext import commands, tasks
-from eliDb import initialize_database, add_member, add_cash, get_cash, add_xp, get_xp, reset_xp, remove_cash, remove_xp, get_xp_leaderboard, add_shop_item, get_cash_leaderboard, deposit, withdraw, get_bank_balance, update_last_claim_times, get_last_claim_times, get_inventory, get_shop_items, add_shop_item, edit_shop_item, delete_shop_item, add_inventory_item, use_inventory_item
+from eliDb import initialize_database, add_member, add_cash, get_cash, add_xp, get_xp, reset_xp, remove_cash, remove_xp, get_xp_leaderboard, get_pet_details, adopt_pet, rename_pet, fetch_random_pet_from_store, add_shop_item, get_cash_leaderboard, deposit, withdraw, get_bank_balance, update_last_claim_times, get_last_claim_times, get_inventory, get_shop_items, add_shop_item, edit_shop_item, delete_shop_item, add_inventory_item, use_inventory_item
+import traceback
+import sqlite3
 
 # Load environment variables from .env file
 load_dotenv()
@@ -497,7 +499,7 @@ async def inventory(ctx):
     if inventory:
         embed = discord.Embed(title="Inventory", color=custom_color)
         for item_name, quantity in inventory:
-            embed.add_field(name=item_name, value=f"Quantity: {quantity}", inline=False)
+            embed.add_field(name=item_name, value=f"Quantity: {quantity}", inline=True)
         await ctx.send(embed=embed)
     else:
         await ctx.send("Your inventory is empty.")
@@ -575,19 +577,72 @@ async def buy_item(ctx, item_name):
 
     await ctx.send(f"Congratulations! You have bought {item_name} for {item_price} cash.")
 
+async def give_role(ctx, *, role_name_or_id: str):
+    guild = ctx.guild
+    try:
+        # Attempt to retrieve the role by ID first
+        role = discord.utils.get(guild.roles, id=int(role_name_or_id))
+        if not role:
+            # If role ID retrieval fails, attempt to retrieve by name
+            role = discord.utils.get(guild.roles, name=role_name_or_id)
+
+        if role:
+            # Check if the user already has the role
+            if role in ctx.author.roles:
+                await ctx.send(f"{ctx.author.mention}, you already have the {role.name} role.")
+            else:
+                # Attempt to assign the role
+                await ctx.author.add_roles(role)
+                await ctx.send(f"{ctx.author.mention}, you have been given the {role.name} role.")
+                logging.info(f"{ctx.author} was given the {role.name} role manually.")
+        else:
+            await ctx.send(f"{ctx.author.mention}, the role '{role_name_or_id}' does not exist.")
+            logging.warning(f"Role '{role_name_or_id}' not found.")
+    except ValueError:
+        await ctx.send(f"{ctx.author.mention}, please provide a valid role name or ID.")
+    except discord.Forbidden:
+        await ctx.send(f"{ctx.author.mention}, I do not have permission to manage roles.")
+    except Exception as e:
+        await ctx.send(f"{ctx.author.mention}, an unexpected error occurred: {e}")
+        logging.exception(f"Unexpected error occurred while giving role to {ctx.author}: {e}")
 
 @bot.command(name='use')
 async def use_item(ctx, *, item_name: str):
     member_id = ctx.author.id  # Get the ID of the command invoker
+    guild = ctx.guild
 
-    # Call the function to use the inventory item
-    success = use_inventory_item(member_id, item_name)
+    try:
+        role_identifier = use_inventory_item(member_id, item_name)
 
-    if success:
-        await ctx.send(f"{ctx.author.mention}, you have successfully used {item_name}.")
-    else:
-        await ctx.send(f"{ctx.author.mention}, an error occurred while using {item_name}. Please try again later.")
+        if role_identifier:
+            # Check if role_identifier is a name or ID
+            role = discord.utils.get(guild.roles, id=int(role_identifier))
+            if not role:
+                role = discord.utils.get(guild.roles, name=role_identifier)
 
+            if role:
+                # Check if the user already has the role
+                if role in ctx.author.roles:
+                    await ctx.send(f"{ctx.author.mention}, you already have the {role.name} role.")
+                else:
+                    # Assign the role using the give_role command
+                    await give_role(ctx, str(role.id))
+                    logging.info(f"{ctx.author} used {item_name} and received the {role.name} role.")
+            else:
+                await ctx.send(f"{ctx.author.mention}, you have successfully used {item_name}, but the role '{role_identifier}' does not exist or I cannot assign it.")
+                logging.warning(f"Role '{role_identifier}' not found or cannot be assigned by {bot.user}.")
+        else:
+            await ctx.send(f"{ctx.author.mention}, you have successfully used {item_name}.")
+            logging.info(f"{ctx.author} used {item_name} without receiving a role.")
+    except ValueError as e:
+        await ctx.send(f"{ctx.author.mention}, an error occurred: {e}")
+        logging.error(f"ValueError occurred while using item '{item_name}': {e}")
+    except discord.Forbidden:
+        await ctx.send(f"{ctx.author.mention}, I do not have permission to manage roles.")
+        logging.error(f"Bot does not have permission to manage roles.")
+    except Exception as e:
+        await ctx.send(f"{ctx.author.mention}, an unexpected error occurred: {e}")
+        logging.exception(f"Unexpected error occurred while using item '{item_name}': {e}")
 
 #
 #
@@ -747,7 +802,7 @@ class RouletteGame:
 
     async def play_roulette(self, ctx, bet_amount: int, space: str):
         member_id = ctx.author.id
-        current_cash = get_cash  # Replace with your method to retrieve user's cash
+        current_cash = get_cash(member_id)  # Replace with your method to retrieve user's cash
 
         if bet_amount <= 0 or bet_amount > current_cash:
             embed = discord.Embed(title="Error!", description='Invalid bet amount.', color=error_color)
@@ -810,18 +865,19 @@ async def roulette(ctx, bet_amount: int, space: str):
 
 @roulette.error
 async def roulette_error(ctx, error):
+    traceback.print_exc() 
     if isinstance(error, commands.CommandOnCooldown):
-        retry_after = round(error.retry_after / 3600, 2)
-        embed = discord.Embed(
-            title="Nuh uh!",
-            description=f"You're going too fast. Try again in {retry_after} hours.",
-            color=error_color
-        )
-        embed.set_author(name=ctx.author.display_name, icon_url=ctx.author.avatar.url)
+        embed = discord.Embed(title="Nuh uh!", description=f"You're going too fast. Try again in {error.retry_after // 3600} hours.", color=error_color)
         await ctx.send(embed=embed)
-    elif isinstance(error, commands.BadArgument) or isinstance(error, commands.MissingRequiredArgument):
-        embed = discord.Embed(title="Error!", description='Invalid arguments.', color=error_color)
-        embed.set_author(name=ctx.author.display_name, icon_url=ctx.author.avatar.url)
+    elif isinstance(error, commands.MissingRequiredArgument):
+        embed = discord.Embed(title="Error!", description='Please enter a valid bet amount between 100 and 1000.', color=error_color)
+        await ctx.send(embed=embed)
+    elif isinstance(error, commands.BadArgument):
+        embed = discord.Embed(title="Error!", description='Please enter a valid numerical bet amount.', color=error_color)
+        await ctx.send(embed=embed)
+    else:
+        # Default error handling
+        embed = discord.Embed(title="Error!", description="Something went wrong.", color=error_color)
         await ctx.send(embed=embed)
 
 #
@@ -854,7 +910,7 @@ class SlotsGame:
 
     async def play_slots(self, ctx, bet_amount: int):
         member_id = ctx.author.id
-        current_cash = get_cash  # Replace with your method to retrieve user's cash
+        current_cash = get_cash(member_id)  # Replace with your method to retrieve user's cash
 
         if bet_amount <= 0 or bet_amount > current_cash:
             embed = discord.Embed(title="Error!", description='Invalid bet amount.', color=error_color)
@@ -862,7 +918,7 @@ class SlotsGame:
             await ctx.send(embed=embed)
             return
 
-        self.remove_cash(member_id, bet_amount)
+        remove_cash(member_id, bet_amount)
 
         result = self.spin()
         winnings = self.calculate_winnings(bet_amount, result)
@@ -891,19 +947,38 @@ async def slots(ctx, bet_amount: int):
 
 @slots.error
 async def slots_error(ctx, error):
+    traceback.print_exc()
     if isinstance(error, commands.CommandOnCooldown):
-        retry_after = round(error.retry_after / 3600, 2)
         embed = discord.Embed(
             title="Nuh uh!",
-            description=f"You're going too fast. Try again in {retry_after} hours.",
+            description=f"You're going too fast. Try again in {error.retry_after // 3600} hours.",
             color=error_color
         )
-        embed.set_author(name=ctx.author.display_name, icon_url=ctx.author.avatar.url)
         await ctx.send(embed=embed)
-    elif isinstance(error, commands.BadArgument) or isinstance(error, commands.MissingRequiredArgument):
-        embed = discord.Embed(title="Error!", description='Invalid arguments.', color=error_color)
-        embed.set_author(name=ctx.author.display_name, icon_url=ctx.author.avatar.url)
+    elif isinstance(error, commands.MissingRequiredArgument):
+        embed = discord.Embed(
+            title="Error!",
+            description='Please enter a valid bet amount between 100 and 1000.',
+            color=error_color
+        )
         await ctx.send(embed=embed)
+        ctx.command.reset_cooldown(ctx)  # Reset cooldown for the command
+    elif isinstance(error, commands.BadArgument):
+        embed = discord.Embed(
+            title="Error!",
+            description='Please enter a valid numerical bet amount.',
+            color=error_color
+        )
+        await ctx.send(embed=embed)
+    else:
+        # Default error handling
+        embed = discord.Embed(
+            title="Error!",
+            description="Something went wrong.",
+            color=error_color
+        )
+        await ctx.send(embed=embed)
+
 
 #
 #
@@ -921,6 +996,101 @@ async def slots_error(ctx, error):
 #
 #
 #
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+# PETS
+
+@bot.command(name='adopt')
+async def adopt_pet_command(ctx):
+    try:
+        # Fetch a random pet from PetStore
+        pet = fetch_random_pet_from_store()
+
+        if not pet:
+            await ctx.send("No pets available in the PetStore.")
+            return
+
+        # Add pet to the user's Pets table
+        member_id = ctx.author.id
+        if adopt_pet(member_id, pet[1], pet[2], '2024-06-14', 'Newborn'):  # Replace with actual AdoptionDate and Level
+            # Construct and send embed message
+            embed = discord.Embed(title="Adopted Pet", description=f"You adopted {pet[1]}!", color=discord.Color.green())
+            embed.set_thumbnail(url=pet[2])  # Set thumbnail to pet's image_url
+            embed.add_field(name="Name", value=pet[1], inline=True)
+            embed.add_field(name="Level", value='Newborn', inline=True) 
+            embed.add_field(name="Adoption Date", value='2024-06-14', inline=False)  # Replace with actual AdoptionDate
+ # Replace with actual Level
+
+            await ctx.send(embed=embed)
+        else:
+            await ctx.send("Failed to add pet to your Pets. Please try again later.")
+
+    except Exception as e:
+        print("Error adopting pet:", e)
+        await ctx.send("An error occurred while adopting the pet. Please try again later.")
+
+@bot.command(name='renamepet')
+async def rename_pet_command(ctx, current_name: str, new_name: str):
+    try:
+        member_id = ctx.author.id
+
+        # Check if the user owns the pet with the current name
+        connection = sqlite3.connect("eli.db")
+        cursor = connection.cursor()
+
+        cursor.execute("SELECT * FROM Pets WHERE MemberId = ? AND PetName = ?", (member_id, current_name))
+        pet = cursor.fetchone()
+
+        cursor.close()
+        connection.close()
+
+        if not pet:
+            await ctx.send(f"You don't have a pet named {current_name}.")
+            return
+
+        # Rename the pet
+        if rename_pet(member_id, current_name, new_name):
+            await ctx.send(f"Successfully renamed your pet from {current_name} to {new_name}.")
+        else:
+            await ctx.send("Failed to rename your pet. Please try again later.")
+
+    except Exception as e:
+        print("Error renaming pet:", e)
+        await ctx.send("An error occurred while renaming your pet. Please try again later.")
+
+@bot.command(name='status')
+async def pet_status(ctx):
+    member_id = ctx.author.id
+    pet_details = get_pet_details(member_id)
+
+    if pet_details:
+        pet_name = pet_details[2]  # Assuming PetName is the third column in the database
+        pet_image_url = pet_details[4]  # Assuming image_url is the fifth column in the database
+        pet_level = pet_details[6]  # Assuming Level is the seventh column in the database
+        last_fed_date = pet_details[3]  # Assuming LastFedDate is the fourth column in the database
+
+        embed = discord.Embed(title="Your Pet Status", description=f"Here's your pet **{pet_name}'s** status:", color=custom_color)
+        embed.set_thumbnail(url=pet_image_url)
+        embed.add_field(name="Name", value=pet_name, inline=True)
+        embed.add_field(name="Level", value=pet_level, inline=True)
+        embed.add_field(name="Last Fed Date", value=last_fed_date if last_fed_date else "Not fed yet", inline=False)
+
+        await ctx.send(embed=embed)
+    else:
+        await ctx.send("You don't have a pet yet. Use `;adopt` to adopt a pet!")
+
+
+
 #
 #
 #
