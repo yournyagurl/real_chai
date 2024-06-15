@@ -572,6 +572,3 @@ def get_pet_details(member_id):
         print("Error fetching pet details:", error)
         return None
 
-add_shop_item("Clown", 100, True, 1158546208676130867)
-add_shop_item("FuckBoy", 100, True, 1105428709382574080)
-
