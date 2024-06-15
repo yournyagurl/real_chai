@@ -379,12 +379,13 @@ def add_inventory_item(member_id, item_name):
     else:
         # Otherwise, add a new row to the Inventory table with quantity 1
         cursor.execute('''
-        INSERT INTO Inventory (MemberId, ItemId)
-        VALUES (?, ?)''', (member_id, item_id))
+        INSERT INTO Inventory (MemberId, ItemId, Quantity)
+        VALUES (?, ?, 1)''', (member_id, item_id))
 
     connection.commit()
     cursor.close()
     connection.close()
+
 
 def use_inventory_item(member_id, item_name):
     try:
@@ -399,7 +400,7 @@ def use_inventory_item(member_id, item_name):
         result = cursor.fetchone()
         if not result:
             raise ValueError("Item not found in shop.")
-
+        
         item_id, consumable, role_assigned = result
 
         # Check if the user has the item in their inventory

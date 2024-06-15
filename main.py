@@ -577,7 +577,7 @@ async def buy_item(ctx, item_name):
 
     await ctx.send(f"Congratulations! You have bought {item_name} for {item_price} cash.")
 
-async def give_role(ctx, *, role_name_or_id: str):
+async def give_role(ctx, role_name_or_id: str, member: discord.Member):
     guild = ctx.guild
     try:
         # Attempt to retrieve the role by ID first
@@ -588,13 +588,13 @@ async def give_role(ctx, *, role_name_or_id: str):
 
         if role:
             # Check if the user already has the role
-            if role in ctx.author.roles:
-                await ctx.send(f"{ctx.author.mention}, you already have the {role.name} role.")
+            if role in member.roles:
+                await ctx.send(f"{member.mention}, you already have the {role.name} role.")
             else:
                 # Attempt to assign the role
-                await ctx.author.add_roles(role)
-                await ctx.send(f"{ctx.author.mention}, you have been given the {role.name} role.")
-                logging.info(f"{ctx.author} was given the {role.name} role manually.")
+                await member.add_roles(role)
+                await ctx.send(f"{member.mention}, you have been given the {role.name} role.")
+                logging.info(f"{member} was given the {role.name} role manually.")
         else:
             await ctx.send(f"{ctx.author.mention}, the role '{role_name_or_id}' does not exist.")
             logging.warning(f"Role '{role_name_or_id}' not found.")
@@ -604,11 +604,11 @@ async def give_role(ctx, *, role_name_or_id: str):
         await ctx.send(f"{ctx.author.mention}, I do not have permission to manage roles.")
     except Exception as e:
         await ctx.send(f"{ctx.author.mention}, an unexpected error occurred: {e}")
-        logging.exception(f"Unexpected error occurred while giving role to {ctx.author}: {e}")
+        logging.exception(f"Unexpected error occurred while giving role to {member}: {e}")
 
 @bot.command(name='use')
-async def use_item(ctx, *, item_name: str):
-    member_id = ctx.author.id  # Get the ID of the command invoker
+async def use_item(ctx, member: discord.Member, *, item_name: str):
+    member_id = ctx.author.id  # Get the ID of the command invoker (ctx.author)
     guild = ctx.guild
 
     try:
@@ -616,18 +616,26 @@ async def use_item(ctx, *, item_name: str):
 
         if role_identifier:
             # Check if role_identifier is a name or ID
-            role = discord.utils.get(guild.roles, id=int(role_identifier))
-            if not role:
+            try:
+                role_id = int(role_identifier)
+                role = discord.utils.get(guild.roles, id=role_id)
+            except ValueError:
                 role = discord.utils.get(guild.roles, name=role_identifier)
 
             if role:
-                # Check if the user already has the role
-                if role in ctx.author.roles:
-                    await ctx.send(f"{ctx.author.mention}, you already have the {role.name} role.")
-                else:
-                    # Assign the role using the give_role command
-                    await give_role(ctx, str(role.id))
-                    logging.info(f"{ctx.author} used {item_name} and received the {role.name} role.")
+                # Check if the bot has permission to manage roles for the member
+                if not ctx.guild.me.guild_permissions.manage_roles:
+                    await ctx.send(f"{ctx.author.mention}, I do not have permission to manage roles.")
+                    return
+
+                # Check if the bot's role is higher than the role to be assigned
+                if role.position >= ctx.guild.me.top_role.position:
+                    await ctx.send(f"{ctx.author.mention}, I cannot assign the role '{role.name}' because it is higher than my highest role.")
+                    return
+
+                # Assign the role using the give_role function
+                await give_role(ctx, str(role.id), member)
+                logging.info(f"{member} used {item_name} and received the {role.name} role.")
             else:
                 await ctx.send(f"{ctx.author.mention}, you have successfully used {item_name}, but the role '{role_identifier}' does not exist or I cannot assign it.")
                 logging.warning(f"Role '{role_identifier}' not found or cannot be assigned by {bot.user}.")
