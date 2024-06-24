@@ -14,6 +14,8 @@ from discord.ext import commands, tasks
 from eliDb import initialize_database, add_member, add_cash, get_cash, add_xp, get_xp, reset_xp, remove_cash, remove_xp, get_xp_leaderboard, get_pet_details, update_pet_feedings, check_pet_health, adopt_pet, rename_pet, fetch_random_pet_from_store, add_shop_item, get_cash_leaderboard, deposit, withdraw, get_bank_balance, update_last_claim_times, get_last_claim_times, get_inventory, get_shop_items, add_shop_item, edit_shop_item, delete_shop_item, add_inventory_item, use_inventory_item
 import traceback
 import sqlite3
+from flask import Flask
+import threading
 
 # Load environment variables from .env file
 load_dotenv()
@@ -1413,6 +1415,18 @@ async def on_ready():
                 logging.info(f"Adding member {member.id} on ready event.")
     print("All members have been added to the database.")
 
+def run_web_server():
+    app = Flask('')
+
+    @app.route('/')
+    def home():
+        return 'Bot is running!'
+
+    app.run(host='0.0.0.0', port=8080)
+
+# Run the web server in a separate thread
+web_thread = threading.Thread(target=run_web_server)
+web_thread.start()
 
 
 initialize_database()
