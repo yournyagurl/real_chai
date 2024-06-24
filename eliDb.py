@@ -607,3 +607,4 @@ def check_pet_health():
     connection.commit()
     cursor.close()
     connection.close()
+
