@@ -6,7 +6,7 @@ import random
 from datetime import datetime, timedelta
 import pytz
 import asyncio
-import subprocess
+from discord.ui import Button, View
 from dotenv import load_dotenv
 from dateutil import parser as date_parser
 import discord
@@ -266,10 +266,15 @@ async def lb_xp(ctx):
 
 # economy commands 
 
+def is_admin():
+    async def predicate(ctx):
+        return ctx.author.guild_permissions.administrator
+    return commands.check(predicate)
 
 # wallet command
 @bot.command(name='bal')
 async def wallet(ctx, member: discord.Member = None):
+    
     """Display Cash and Bank Balance"""
     if member is None:
         member = ctx.author
@@ -286,6 +291,7 @@ async def wallet(ctx, member: discord.Member = None):
 
 # add cash command
 @bot.command(name='addcash')
+@is_admin()
 async def addcash(ctx, amount: int = None, member: discord.Member = None):
     """Add Cash (for debugging)"""
     if ctx.message.author.guild_permissions.administrator:
@@ -310,6 +316,7 @@ async def addcash(ctx, amount: int = None, member: discord.Member = None):
 
 # remove cash command
 @bot.command(name="removecash")
+@is_admin()
 async def removecash(ctx, amount:int = None, member: discord.Member = None) :
     """Remove cash from one member"""
     if ctx.message.author.guild_permissions.administrator:
@@ -332,6 +339,32 @@ async def removecash(ctx, amount:int = None, member: discord.Member = None) :
     remove_cash(member.id, amount)
     logging.info(f"removed {amount_int} cash from member {member.id}")
     await ctx.send(f"Removed {amount} :four_leaf_clover: from {member.display_name}'s account")
+
+
+@bot.command(name="tax")
+@is_admin()
+async def removecash(ctx, amount:int = None, member: discord.Member = None) :
+    """Remove cash from one member"""
+    if ctx.message.author.guild_permissions.administrator:
+        if member is None:
+            embed = discord.Embed(title="Oops!", description="please mention a member")
+            await ctx.send(embed = embed)
+    
+    if amount is None:
+        embed = discord.Embed(title="Oops!", description="Please add an amount")
+        await ctx.send(embed=embed)
+
+    try:
+        amount_int = int(amount)
+    except ValueError:
+        embed = discord.Embed(title="Oops!", description="It's **';removecash <amount> @<user>'**")
+        await ctx.send(embed=embed)
+        return
+    
+    print(f"taxed {amount} :four_leaf_clover: from {member.display_name}'s account")
+    remove_cash(member.id, amount)
+    logging.info(f"removed {amount_int} cash from member {member.id}")
+    await ctx.send(f"taxed {amount} :four_leaf_clover: from {member.display_name}'s account")
 
 # Cash leaderboard
 @bot.command(name="leaderboard-cash")
@@ -425,6 +458,7 @@ weekly_role_income = {
     "Shamrock": 5000,  # Replace with your role names and income amounts
     "₊˚໒ Staff ୭₊˚": 2500,
     "Vanity Link" : 2000,
+    "Bronze Clover": 2000,
 }
 # Run the bot
 @bot.command(name="weekly")
@@ -504,20 +538,63 @@ async def inventory(ctx):
     else:
         await ctx.send("Your inventory is empty.")
 
-@bot.command(name='shop')
 async def shop(ctx):
     shop_items = get_shop_items()
+    items_per_page = 10
 
-    if shop_items:
-        embed = discord.Embed(title="Shop Items", color=custom_color)
-        for item_name, item_price in shop_items:
-            embed.add_field(name=item_name, value=f"Price: {item_price}", inline=False)
-        await ctx.send(embed=embed)
-    else:
+    if not shop_items:
         await ctx.send("There are no items available in the shop.")
+        return
+
+    pages = []
+    for i in range(0, len(shop_items), items_per_page):
+        embed = discord.Embed(title="Shop Items", color=custom_color)
+        for item_name, item_price in shop_items[i:i + items_per_page]:
+            embed.add_field(name=item_name, value=f"Price: {item_price}", inline=False)
+        pages.append(embed)
+
+    if len(pages) == 1:
+        await ctx.send(embed=pages[0])
+        return
+
+    current_page = 0
+
+    async def get_view(page_num):
+        view = View()
+        if page_num > 0:
+            view.add_item(Button(label="Previous", style=discord.ButtonStyle.primary, custom_id="prev"))
+        if page_num < len(pages) - 1:
+            view.add_item(Button(label="Next", style=discord.ButtonStyle.primary, custom_id="next"))
+        return view
+
+    async def send_page(page_num):
+        page_embed = pages[page_num]
+        view = await get_view(page_num)
+        message = await ctx.send(embed=page_embed, view=view)
+        return message
+
+    message = await send_page(current_page)
+
+    while True:
+        def check(interaction):
+            return interaction.message.id == message.id and interaction.user == ctx.author
+
+        try:
+            interaction = await bot.wait_for("interaction", check=check, timeout=60.0)
+        except asyncio.TimeoutError:
+            break
+
+        if interaction.data['custom_id'] == 'next':
+            current_page += 1
+            await interaction.response.edit_message(embed=pages[current_page], view=await get_view(current_page))
+        elif interaction.data['custom_id'] == 'prev':
+            current_page -= 1
+            await interaction.response.edit_message(embed=pages[current_page], view=await get_view(current_page))
+
 
 
 @bot.command(name='additem')
+@is_admin()
 async def add_item(ctx):
     await ctx.send("Please provide the name of the item.")
     name = await bot.wait_for('message', check=lambda m: m.author == ctx.author and m.channel == ctx.channel)
@@ -540,11 +617,13 @@ async def add_item(ctx):
 
 
 @bot.command(name='deleteitem')
+@is_admin()
 async def delete_item(ctx, item_name):
     delete_shop_item(item_name)
     await ctx.send("Item deleted from the shop.")
 
 @bot.command(name='edititem')
+@is_admin()
 async def edit_item(ctx, item_id: int, name=None, price=None, consumable=None, role_assigned=None):
     edit_shop_item(item_id, name, price, consumable, role_assigned)
     await ctx.send("Item details updated.")
@@ -675,7 +754,7 @@ card_values = {
     'J': 10, 'Q': 10, 'K': 10, 'A': 11
 }
 
-# Deal a card
+
 def deal_card():
     return random.choice(deck)
 
@@ -687,8 +766,8 @@ def calculate_hand_value(hand):
         value -= 10
         aces -= 1
     return value
-error_color = discord.Color.from_rgb(204,0,0)
 
+error_color = discord.Color.from_rgb(204, 0, 0)
 
 @bot.command(name='blackjack')
 @commands.cooldown(1, 86400, commands.BucketType.user)
@@ -699,11 +778,15 @@ async def blackjack(ctx, bet: int):
     if bet < 100 or bet > 1000:
         embed = discord.Embed(title="Error!", description='Bet must be between 100 and 1000.', color=error_color)
         await ctx.send(embed=embed)
+        # Reset cooldown for this specific user in this specific context
+        blackjack.reset_cooldown(ctx)
         return
 
     if current_cash < bet:
         embed = discord.Embed(title="Error!", description=f'You do not have enough cash to place this bet. Your current cash is {current_cash}.', color=error_color)
         await ctx.send(embed=embed)
+        # Reset cooldown for this specific user in this specific context
+        blackjack.reset_cooldown(ctx)
         return
 
     # Deduct the bet from the player's cash
@@ -754,12 +837,12 @@ async def blackjack(ctx, bet: int):
     dealer_value = calculate_hand_value(dealer_hand)
     if dealer_value > 21:
         await ctx.send(f'Dealer busts with a hand value of {dealer_value}. You win {bet * 2}!')
-        add_cash(member_id, bet + bet)
+        add_cash(member_id, bet * 2)
     elif dealer_value > player_value:
         await ctx.send(f'Dealer wins with {dealer_value} against your {player_value}. You lose your bet of {bet}.')
     elif dealer_value < player_value:
         await ctx.send(f'You win with {player_value} against dealer\'s {dealer_value}. You win {bet * 2}!')
-        add_cash(member_id, bet + bet)
+        add_cash(member_id, bet * 2)
     else:
         await ctx.send(f'It\'s a tie with both having {player_value}. Your bet of {bet} is returned.')
         add_cash(member_id, bet)
@@ -767,20 +850,25 @@ async def blackjack(ctx, bet: int):
 @blackjack.error
 async def blackjack_error(ctx, error):
     if isinstance(error, commands.CommandOnCooldown):
-        embed = discord.Embed(title="Nuh uh!", description=f"You're going too fast. Try again in {error.retry_after // 3600} hours.", color=error_color)
+        embed = discord.Embed(title="Nuh uh!", description=f"You're going too fast. Try again in {int(error.retry_after // 3600)} hours.", color=error_color)
         await ctx.send(embed=embed)
     elif isinstance(error, commands.MissingRequiredArgument):
         embed = discord.Embed(title="Error!", description='Please enter a valid bet amount between 100 and 1000.', color=error_color)
         await ctx.send(embed=embed)
+        await ctx.send(f"To retry the command, use: `;blackjack <bet_amount>` (e.g., `;blackjack 500`)")
+        # Reset cooldown for this specific user in this specific context
+        blackjack.reset_cooldown(ctx)
     elif isinstance(error, commands.BadArgument):
         embed = discord.Embed(title="Error!", description='Please enter a valid numerical bet amount.', color=error_color)
         await ctx.send(embed=embed)
+        await ctx.send(f"To retry the command, use: `;blackjack <bet_amount>` (e.g., `;blackjack 500`)")
+        # Reset cooldown for this specific user in this specific context
+        blackjack.reset_cooldown(ctx)
     else:
         # Default error handling
         embed = discord.Embed(title="Error!", description="Something went wrong.", color=error_color)
         await ctx.send(embed=embed)
-
-    embed.set_author(name=ctx.author.display_name)
+        await ctx.send(f"To retry the command, use: `;blackjack <bet_amount>` (e.g., `;blackjack 500`)")
 #
 #
 #
@@ -812,7 +900,7 @@ class RouletteGame:
         member_id = ctx.author.id
         current_cash = get_cash(member_id)  # Replace with your method to retrieve user's cash
 
-        if bet_amount <= 0 or bet_amount > current_cash:
+        if bet_amount <= 100 or bet_amount > current_cash or bet_amount > 1000:
             embed = discord.Embed(title="Error!", description='Invalid bet amount.', color=error_color)
             embed.set_author(name=ctx.author.display_name, icon_url=ctx.author.avatar.url)
             await ctx.send(embed=embed)
@@ -869,24 +957,38 @@ roulette_game = RouletteGame()
 @bot.command(name='roulette')
 @commands.cooldown(1, 86400, commands.BucketType.user)
 async def roulette(ctx, bet_amount: int, space: str):
+    if space not in ["odd", "even", "black", "red"] and not space.isdigit():
+        embed = discord.Embed(title="Error!", description="Invalid space. Please bet on 'odd', 'even', 'black', 'red', or a specific number (0-36).", color=error_color)
+        await ctx.send(embed=embed)
+        return
     await roulette_game.play_roulette(ctx, bet_amount, space)
 
 @roulette.error
 async def roulette_error(ctx, error):
-    traceback.print_exc() 
+    traceback.print_exc()
     if isinstance(error, commands.CommandOnCooldown):
-        embed = discord.Embed(title="Nuh uh!", description=f"You're going too fast. Try again in {error.retry_after // 3600} hours.", color=error_color)
+        embed = discord.Embed(title="Nuh uh!", description=f"You're going too fast. Try again in {int(error.retry_after // 3600)} hours.", color=error_color)
         await ctx.send(embed=embed)
     elif isinstance(error, commands.MissingRequiredArgument):
-        embed = discord.Embed(title="Error!", description='Please enter a valid bet amount between 100 and 1000.', color=error_color)
+        embed = discord.Embed(title="Error!", description='Please enter a valid bet amount between 100 and 1000, and a color (red or black).', color=error_color)
         await ctx.send(embed=embed)
+        await ctx.send(f"To retry the command, use: `;roulette <bet_amount> <color>` (e.g., `;roulette 400 red`)")
+        # Reset cooldown for this specific user in this specific context
+        roulette.reset_cooldown(ctx)
     elif isinstance(error, commands.BadArgument):
-        embed = discord.Embed(title="Error!", description='Please enter a valid numerical bet amount.', color=error_color)
+        embed = discord.Embed(title="Error!", description='Please enter a valid numerical bet amount and a valid color (red or black).', color=error_color)
         await ctx.send(embed=embed)
+        await ctx.send(f"To retry the command, use: `;roulette <bet_amount> <color>` (e.g., `;roulette 400 red`)")
+        # Reset cooldown for this specific user in this specific context
+        roulette.reset_cooldown(ctx)
     else:
         # Default error handling
         embed = discord.Embed(title="Error!", description="Something went wrong.", color=error_color)
         await ctx.send(embed=embed)
+        await ctx.send(f"To retry the command, use: `;roulette <bet_amount> <color>` (e.g., `;roulette 400 red`)")
+
+
+
 
 #
 #
@@ -1098,6 +1200,7 @@ async def pet_status(ctx):
         await ctx.send("You don't have a pet yet. Use `;adopt` to adopt a pet!")
 
 @bot.command(name='feed')
+@commands.cooldown(1, 86400, commands.BucketType.user)
 async def feed_pet_command(ctx, pet_name: str):
     try:
         member_id = ctx.author.id
@@ -1120,6 +1223,40 @@ async def feed_pet_command(ctx, pet_name: str):
     except Exception as e:
         print("Error feeding pet:", e)
         await ctx.send("An error occurred while feeding your pet. Please try again later.")
+
+@feed_pet_command.error
+async def feed_error(ctx, error):
+    traceback.print_exc()
+    if isinstance(error, commands.CommandOnCooldown):
+        embed = discord.Embed(
+            title="Not feeding time yet!!",
+            description="Sorry, I'm not hungry :/"
+            
+        )
+        await ctx.send(embed=embed)
+    elif isinstance(error, commands.MissingRequiredArgument):
+        embed = discord.Embed(
+            title="Error!",
+            description='Please enter the name of your pet',
+            color=error_color
+        )
+        await ctx.send(embed=embed)
+        ctx.command.reset_cooldown(ctx)  # Reset cooldown for the command
+    elif isinstance(error, commands.BadArgument):
+        embed = discord.Embed(
+            title="Error!",  
+            description=' ``;feed {petname} `` ',
+            color=error_color
+        )
+        await ctx.send(embed=embed)
+    else:
+        # Default error handling
+        embed = discord.Embed(
+            title="Error!",
+            description="Something went wrong.",
+            color=error_color
+        )
+        await ctx.send(embed=embed)
 
 @tasks.loop(hours=24)
 async def daily_pet_check():
